@@ -180,10 +180,10 @@ public class CompassListener extends CordovaPlugin implements SensorEventListene
         // If found, then register as listener
         if (gravityList != null && gravityList.size() > 0 && magneticFieldList != null && magneticFieldList.size() > 0) {
             this.gravitySensor = gravityList.get(0);
-            this.sensorManager.registerListener(this, this.gravitySensor, SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM);
+            this.sensorManager.registerListener(this, this.gravitySensor, SensorManager.SENSOR_STATUS_ACCURACY_HIGH);
 
             this.magneticFieldSensor = magneticFieldList.get(0);
-            this.sensorManager.registerListener(this, this.magneticFieldSensor, SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM);
+            this.sensorManager.registerListener(this, this.magneticFieldSensor, SensorManager.SENSOR_STATUS_ACCURACY_HIGH);
 
             this.lastAccessTime = System.currentTimeMillis();
             this.setStatus(CompassListener.STARTING);
@@ -233,13 +233,13 @@ public class CompassListener extends CordovaPlugin implements SensorEventListene
         int sensorType = event.sensor.getType();
         switch (sensorType) {
             case Sensor.TYPE_GRAVITY:
-                System.arraycopy(event.values, 0, gravityValues, 0, gravityValues.length);
+                this.gravityValues = event.values.clone();
                 this.gravity = (float) Math.sqrt(this.gravityValues[0] * this.gravityValues[0] + this.gravityValues[1] * this.gravityValues[1] + this.gravityValues[2] * this.gravityValues[2]);
 //                Log.d("ZAFIR 1", String.valueOf(gravity));
                 for (int i = 0; i < gravityValues.length; i++) gravityValues[i] /= gravity;
                 break;
             case Sensor.TYPE_MAGNETIC_FIELD:
-                System.arraycopy(event.values, 0, magneticFieldValues, 0, magneticFieldValues.length);
+                this.magneticFieldValues = event.values.clone();
                 this.magneticField = (float) Math.sqrt(this.magneticFieldValues[0] * this.magneticFieldValues[0] + this.magneticFieldValues[1] * this.magneticFieldValues[1] + this.magneticFieldValues[2] * this.magneticFieldValues[2]);
                 Log.d("ZAFIR 2", String.valueOf(magneticField));
                 for(int i=0; i < magneticFieldValues.length; i++) magneticFieldValues[i] /= magneticField;
@@ -270,7 +270,12 @@ public class CompassListener extends CordovaPlugin implements SensorEventListene
             float sin = normEastVector[1] -  normNorthVector[0];
             float cos = normEastVector[0] +  normNorthVector[1];
             float azimuthRadians = (float) (sin != 0 && cos != 0 ? Math.atan2(sin, cos) : 0);
-            this.heading = azimuthRadians * (180 / Math.PI);
+            double azimuth = azimuthRadians * (180 / Math.PI);
+            if (azimuth >= 0) {
+                this.heading = azimuth;
+            } else if (azimuth < 0) {
+                this.heading = azimuth + 360;
+            }
         }
 
 
