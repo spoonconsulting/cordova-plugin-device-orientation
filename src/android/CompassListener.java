@@ -37,8 +37,6 @@ import android.content.Context;
 
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Log;
-import android.view.Surface;
 
 /**
  * This class listens to the compass sensor and stores the latest heading value.
@@ -65,8 +63,8 @@ public class CompassListener extends CordovaPlugin implements SensorEventListene
     float[] normNorthVector = new float[3];
 
     private SensorManager sensorManager;// Sensor manager
-    Sensor gravitySensor;         // Accelerometer sensor returned by sensor manager
-    Sensor magneticFieldSensor;         // Accelerometer sensor returned by sensor manager
+    Sensor gravitySensor;         // Gravity sensor returned by sensor manager
+    Sensor magneticFieldSensor;         // Magnetic Field sensor returned by sensor manager
 
     private CallbackContext callbackContext;
 
@@ -235,88 +233,53 @@ public class CompassListener extends CordovaPlugin implements SensorEventListene
             case Sensor.TYPE_GRAVITY:
                 this.gravityValues = event.values.clone();
                 this.gravity = (float) Math.sqrt(this.gravityValues[0] * this.gravityValues[0] + this.gravityValues[1] * this.gravityValues[1] + this.gravityValues[2] * this.gravityValues[2]);
-//                Log.d("ZAFIR 1", String.valueOf(gravity));
                 for (int i = 0; i < gravityValues.length; i++) gravityValues[i] /= gravity;
                 break;
             case Sensor.TYPE_MAGNETIC_FIELD:
                 this.magneticFieldValues = event.values.clone();
                 this.magneticField = (float) Math.sqrt(this.magneticFieldValues[0] * this.magneticFieldValues[0] + this.magneticFieldValues[1] * this.magneticFieldValues[1] + this.magneticFieldValues[2] * this.magneticFieldValues[2]);
-                Log.d("ZAFIR 2", String.valueOf(magneticField));
-                for(int i=0; i < magneticFieldValues.length; i++) magneticFieldValues[i] /= magneticField;
+                for (int i = 0; i < magneticFieldValues.length; i++) magneticFieldValues[i] /= magneticField;
                 break;
         }
 
         if (this.gravityValues != null && this.magneticFieldValues != null) {
-            float eastX = this.magneticFieldValues[1] * this.gravityValues[2] - this.magneticFieldValues[2] * this.gravityValues[1];
-            float eastY = this.magneticFieldValues[2] * this.gravityValues[0] - this.magneticFieldValues[0] * this.gravityValues[2];
-            float eastZ = this.magneticFieldValues[0] * this.gravityValues[1] - this.magneticFieldValues[1] * this.gravityValues[0];
-            float normEast = (float) Math.sqrt(eastX * eastX + eastY * eastY + eastZ * eastZ);
-            if (gravity * magneticField * normEast < 0.1f) {
-                return;
-            } else {
-                normEastVector[0] = eastX / normEast;
-                normEastVector[1] = eastY / normEast;
-                normEastVector[2] = eastZ / normEast;
-            }
-            float mDotG = (this.gravityValues[0] * this.magneticFieldValues[0] + this.gravityValues[1] * this.magneticFieldValues[1] + this.gravityValues[2] * this.magneticFieldValues[2]);
-            float northX = this.magneticFieldValues[0] - this.gravityValues[0] * mDotG;
-            float northY = this.magneticFieldValues[1] - this.gravityValues[1] * mDotG;
-            float northZ = this.magneticFieldValues[2] - this.gravityValues[2] * mDotG;
-            float normNorth = (float) Math.sqrt(northX * northX + northY * northY + northZ * northZ);
-            normNorthVector[0] = northX / normNorth;
-            normNorthVector[1] = northY / normNorth;
-            normNorthVector[2] = northZ / normNorth;
-
-            float sin = normEastVector[1] -  normNorthVector[0];
-            float cos = normEastVector[0] +  normNorthVector[1];
-            float azimuthRadians = (float) (sin != 0 && cos != 0 ? Math.atan2(sin, cos) : 0);
-            double azimuth = azimuthRadians * (180 / Math.PI);
-            if (azimuth >= 0) {
-                this.heading = azimuth;
-            } else if (azimuth < 0) {
-                this.heading = azimuth + 360;
-            }
+            this.heading = calculateHeading();
         }
-
 
         // If heading hasn't been read for TIMEOUT time, then turn off compass sensor to save power
         if ((this.timeStamp - this.lastAccessTime) > this.TIMEOUT) {
             this.stop();
         }
     }
-//    public void onSensorChanged(SensorEvent event) {
-//        this.timeStamp = System.currentTimeMillis();
-//        int sensorType = event.sensor.getType();
-//        float[] heading = new float[3];
-//        switch (sensorType) {
-//            case Sensor.TYPE_ACCELEROMETER:
-//                this.acceleration = event.values;
-//                Log.d("ZAFIR 1", String.valueOf(acceleration[0]));
-//                break;
-//            case Sensor.TYPE_MAGNETIC_FIELD:
-//                this.magneticField = event.values;
-//                Log.d("ZAFIR 2", String.valueOf(magneticField[0]));
-//                break;
-//        }
-//
-//        if (this.acceleration != null && this.magneticField != null) {
-//            float rotationMatrix[] = new float[9];
-//            float identityMatrix[] = new float[9];
-//            boolean success = this.sensorManager.getRotationMatrix(rotationMatrix, identityMatrix, this.acceleration, this.magneticField);
-//            if (success) {
-//                SensorManager.getOrientation(rotationMatrix, heading);
-//                this.heading = Math.toDegrees(heading[2]);
-//                Log.d("ZAFIR 3", String.valueOf(this.heading));
-//                this.setStatus(CompassListener.RUNNING);
-//            }
-//        }
-//
-//
-//        // If heading hasn't been read for TIMEOUT time, then turn off compass sensor to save power
-//        if ((this.timeStamp - this.lastAccessTime) > this.TIMEOUT) {
-//            this.stop();
-//        }
-//    }
+
+    public double calculateHeading() {
+        float eastX = this.magneticFieldValues[1] * this.gravityValues[2] - this.magneticFieldValues[2] * this.gravityValues[1];
+        float eastY = this.magneticFieldValues[2] * this.gravityValues[0] - this.magneticFieldValues[0] * this.gravityValues[2];
+        float eastZ = this.magneticFieldValues[0] * this.gravityValues[1] - this.magneticFieldValues[1] * this.gravityValues[0];
+        float normEast = (float) Math.sqrt(eastX * eastX + eastY * eastY + eastZ * eastZ);
+        if (gravity * magneticField * normEast >= 0.1f) {
+            normEastVector[0] = eastX / normEast;
+            normEastVector[1] = eastY / normEast;
+            normEastVector[2] = eastZ / normEast;
+        }
+        float mDotG = (this.gravityValues[0] * this.magneticFieldValues[0] + this.gravityValues[1] * this.magneticFieldValues[1] + this.gravityValues[2] * this.magneticFieldValues[2]);
+        float northX = this.magneticFieldValues[0] - this.gravityValues[0] * mDotG;
+        float northY = this.magneticFieldValues[1] - this.gravityValues[1] * mDotG;
+        float northZ = this.magneticFieldValues[2] - this.gravityValues[2] * mDotG;
+        float normNorth = (float) Math.sqrt(northX * northX + northY * northY + northZ * northZ);
+        normNorthVector[0] = northX / normNorth;
+        normNorthVector[1] = northY / normNorth;
+        normNorthVector[2] = northZ / normNorth;
+
+        float sin = normEastVector[1] -  normNorthVector[0];
+        float cos = normEastVector[0] +  normNorthVector[1];
+        float azimuthRadians = (float) (sin != 0 && cos != 0 ? Math.atan2(sin, cos) : 0);
+        double azimuth = azimuthRadians * (180 / Math.PI);
+        if (azimuth < 0) {
+            return azimuth + 360;
+        }
+        return azimuth;
+    }
 
     /**
      * Get status of compass sensor.
