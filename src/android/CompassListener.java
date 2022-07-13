@@ -263,38 +263,29 @@ public class CompassListener extends CordovaPlugin implements SensorEventListene
         float magneticFieldY = magneticFieldValues[1];
         float magneticFieldZ = magneticFieldValues[2];
 
-        //cross product of the magnetic field vector and the gravity vector
-        float Hx = magneticFieldY * accelerometerZ - magneticFieldZ * accelerometerY;
-        float Hy = magneticFieldZ * accelerometerX - magneticFieldX * accelerometerZ;
-        float Hz = magneticFieldX * accelerometerY - magneticFieldY * accelerometerX;
+        float normX = magneticFieldY * accelerometerZ - magneticFieldZ * accelerometerY;
+        float normY = magneticFieldZ * accelerometerX - magneticFieldX * accelerometerZ;
+        float normZ = magneticFieldX * accelerometerY - magneticFieldY * accelerometerX;
 
-        //normalize the values of resulting vector
-        final float invH = 1.0f / (float) Math.sqrt(Hx * Hx + Hy * Hy + Hz * Hz);
-        Hx *= invH;
-        Hy *= invH;
-        Hz *= invH;
+        final float normA = 1.0f / (float) Math.sqrt(normX * normX + normY * normY + normZ * normZ);
+        normX *= normA;
+        normY *= normA;
+        normZ *= normA;
 
-        //normalize the values of gravity vector
-        final float invA = 1.0f / (float) Math.sqrt(accelerometerX * accelerometerX + accelerometerY * accelerometerY + accelerometerZ * accelerometerZ);
-        accelerometerX *= invA;
-        accelerometerY *= invA;
-        accelerometerZ *= invA;
+        final float normB = 1.0f / (float) Math.sqrt(accelerometerX * accelerometerX + accelerometerY * accelerometerY + accelerometerZ * accelerometerZ);
+        accelerometerX *= normB;
+        accelerometerZ *= normB;
 
-        //cross product of the gravity vector and the new vector H
-        final float Mx = accelerometerY * Hz - accelerometerZ * Hy;
-        final float My = accelerometerZ * Hx - accelerometerX * Hz;
-        final float Mz = accelerometerX * Hy - accelerometerY * Hx;
+        final float normC = accelerometerZ * normX - accelerometerX * normZ;
 
-        //arctangent to obtain heading in radians
-        return (float) Math.atan2(Hy, My);
+        return (float) Math.atan2(normY, normC);
     }
 
 
-    public static float convertRadToDeg(float rad) {
-        return (float) (rad / Math.PI) * 180;
+    public static float convertRadToDeg(float radian) {
+        return (float) (radian / Math.PI) * 180;
     }
 
-    //map angle from [-180,180] range to [0,360] range
     public static float map180to360(float angle) {
         return (angle + 360) % 360;
     }
