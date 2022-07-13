@@ -37,6 +37,8 @@ import android.content.Context;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
+import android.view.Surface;
 
 /**
  * This class listens to the compass sensor and stores the latest heading value.
@@ -47,17 +49,21 @@ public class CompassListener extends CordovaPlugin implements SensorEventListene
     public static int STARTING = 1;
     public static int RUNNING = 2;
     public static int ERROR_FAILED_TO_START = 3;
+    public static final float ALPHA = 0.15f;
 
     public long TIMEOUT = 30000;        // Timeout in msec to shut off listener
 
     int status;                         // status of listener
-    float heading;                      // most recent heading value
+    double heading;                      // most recent heading value
     long timeStamp;                     // time of most recent value
     long lastAccessTime;                // time the value was last retrieved
     int accuracy;                       // accuracy of the sensor
+    float[] accelerometerValues = new float[3];
+    float[] magneticFieldValues = new float[3];
 
     private SensorManager sensorManager;// Sensor manager
-    Sensor mSensor;                     // Compass sensor returned by sensor manager
+    Sensor accelerometerSensor;         // Accelerometer sensor returned by sensor manager
+    Sensor magneticFieldSensor;         // Magnetic Field sensor returned by sensor manager
 
     private CallbackContext callbackContext;
 
@@ -163,18 +169,22 @@ public class CompassListener extends CordovaPlugin implements SensorEventListene
             return this.status;
         }
 
-        // Get compass sensor from sensor manager
-        @SuppressWarnings("deprecation")
-        List<Sensor> list = this.sensorManager.getSensorList(Sensor.TYPE_ORIENTATION);
+        // Get accelerometer sensor from sensor manager
+        List<Sensor> accelerometerList = this.sensorManager.getSensorList(Sensor.TYPE_ACCELEROMETER);
+        // Get magnetic field sensor from sensor manager
+        List<Sensor> magneticFieldList = this.sensorManager.getSensorList(Sensor.TYPE_MAGNETIC_FIELD);
 
         // If found, then register as listener
-        if (list != null && list.size() > 0) {
-            this.mSensor = list.get(0);
-            this.sensorManager.registerListener(this, this.mSensor, SensorManager.SENSOR_DELAY_NORMAL);
+        if (accelerometerList != null && accelerometerList.size() > 0 && magneticFieldList != null && magneticFieldList.size() > 0) {
+            this.accelerometerSensor = accelerometerList.get(0);
+            this.sensorManager.registerListener(this, this.accelerometerSensor, SensorManager.SENSOR_DELAY_GAME, SensorManager.SENSOR_DELAY_GAME);
+
+            this.magneticFieldSensor = magneticFieldList.get(0);
+            this.sensorManager.registerListener(this, this.magneticFieldSensor, SensorManager.SENSOR_DELAY_GAME, SensorManager.SENSOR_DELAY_GAME);
+
             this.lastAccessTime = System.currentTimeMillis();
             this.setStatus(CompassListener.STARTING);
         }
-
         // If error, then set status to error
         else {
             this.setStatus(CompassListener.ERROR_FAILED_TO_START);
@@ -188,7 +198,8 @@ public class CompassListener extends CordovaPlugin implements SensorEventListene
      */
     public void stop() {
         if (this.status != CompassListener.STOPPED) {
-            this.sensorManager.unregisterListener(this);
+            this.sensorManager.unregisterListener(this, accelerometerSensor);
+            this.sensorManager.unregisterListener(this, magneticFieldSensor);
         }
         this.setStatus(CompassListener.STOPPED);
     }
@@ -215,19 +226,77 @@ public class CompassListener extends CordovaPlugin implements SensorEventListene
      * @param SensorEvent event
      */
     public void onSensorChanged(SensorEvent event) {
-
-        // We only care about the orientation as far as it refers to Magnetic North
-        float heading = event.values[0];
-
-        // Save heading
         this.timeStamp = System.currentTimeMillis();
-        this.heading = heading;
-        this.setStatus(CompassListener.RUNNING);
+        int sensorType = event.sensor.getType();
+        switch (sensorType) {
+            case Sensor.TYPE_ACCELEROMETER:
+                this.accelerometerValues = lowPassFilter(event.values.clone(), accelerometerValues);
+                break;
+            case Sensor.TYPE_MAGNETIC_FIELD:
+                this.magneticFieldValues = lowPassFilter(event.values.clone(), magneticFieldValues);
+                Log.d("ZAFIR 2", String.valueOf(magneticFieldValues));
+                break;
+        }
+
+        float headingTemp;
+
+        if (this.accelerometerValues != null && this.magneticFieldValues != null) {
+            headingTemp = calculateHeading(accelerometerValues, magneticFieldValues);
+            headingTemp = convertRadToDeg(headingTemp);
+            headingTemp = map180to360(headingTemp);
+            this.heading = headingTemp;
+        }
+
 
         // If heading hasn't been read for TIMEOUT time, then turn off compass sensor to save power
         if ((this.timeStamp - this.lastAccessTime) > this.TIMEOUT) {
             this.stop();
         }
+    }
+
+    public static float calculateHeading(float[] accelerometerValues, float[] magneticFieldValues) {
+        float accelerometerX = accelerometerValues[0];
+        float accelerometerY = accelerometerValues[1];
+        float accelerometerZ = accelerometerValues[2];
+
+        float magneticFieldX = magneticFieldValues[0];
+        float magneticFieldY = magneticFieldValues[1];
+        float magneticFieldZ = magneticFieldValues[2];
+
+        float normX = magneticFieldY * accelerometerZ - magneticFieldZ * accelerometerY;
+        float normY = magneticFieldZ * accelerometerX - magneticFieldX * accelerometerZ;
+        float normZ = magneticFieldX * accelerometerY - magneticFieldY * accelerometerX;
+
+        final float normA = 1.0f / (float) Math.sqrt(normX * normX + normY * normY + normZ * normZ);
+        normX *= normA;
+        normY *= normA;
+        normZ *= normA;
+
+        final float normB = 1.0f / (float) Math.sqrt(accelerometerX * accelerometerX + accelerometerY * accelerometerY + accelerometerZ * accelerometerZ);
+        accelerometerX *= normB;
+        accelerometerZ *= normB;
+
+        final float normC = accelerometerZ * normX - accelerometerX * normZ;
+
+        return (float) Math.atan2(normY, normC);
+    }
+
+
+    public static float convertRadToDeg(float radian) {
+        return (float) (radian / Math.PI) * 180;
+    }
+
+    public static float map180to360(float angle) {
+        return (angle + 360) % 360;
+    }
+
+    public static float[] lowPassFilter(float[] input, float[] output) {
+        if (output == null) return input;
+
+        for (int i = 0; i < input.length; i++) {
+            output[i] = output[i] + ALPHA * (input[i] - output[i]);
+        }
+        return output;
     }
 
     /**
@@ -244,7 +313,7 @@ public class CompassListener extends CordovaPlugin implements SensorEventListene
      *
      * @return          heading
      */
-    public float getHeading() {
+    public double getHeading() {
         this.lastAccessTime = System.currentTimeMillis();
         return this.heading;
     }
